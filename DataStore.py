@@ -17,10 +17,7 @@ RESULTS_PKL_DIR = "results_pkl"
 
 # Known delisted/suspended NSE stocks
 DELISTED = {
-    "BINANIIND", "SUZLON", "RCOM", "UNITECH", "JPASSOCIAT", "KINGFISHER",
-    "ETHOS-RE", "OCCL", "SKIPPER", "SMSLIFE", "SONACOMS", "SPLIL",
-    "SPLPETRO", "SPMLINFRA", "STLTECH", "STYLEBAAZA", "SUBEXLTD", "TIMESGTY",
-    "CAPTRU-RE", "DECCANCE", "MSPL", "SREINFRA", "GVKPIL", "RTNPOWER"
+    "BINANIIND"
 }
 
 BATCH_SIZE = 180        # ← Increased! (2077 / 180 = 12 batches)
