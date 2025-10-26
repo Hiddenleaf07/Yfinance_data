@@ -9,7 +9,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 STOCK_LIST_PATH = "Indices/EQUITY_L.csv"
 RESULTS_PKL_DIR = "results_pkl"
 BATCH_SIZE = 200          # smaller batches keep Yahoo responsive
-MAX_WORKERS = 8         # more threads = faster, until Yahoo rate-limits
+MAX_WORKERS = 12         # more threads = faster, until Yahoo rate-limits
 MAX_RETRIES = 0          # retry failed tickers a couple of times
 
 def read_stock_list(stock_list_path=STOCK_LIST_PATH):
@@ -33,8 +33,12 @@ def download_single_stock(stock_code, period, interval):
             auto_adjust=True,
             rounding=True,
             timeout=5,
+            actions=True  # Include dividends and stock splits
         )
         if not data.empty:
+            # Ensure consistent column names and order
+            expected_columns = ['Open', 'High', 'Low', 'Close', 'Volume', 'Dividends', 'Stock Splits']
+            data = data.reindex(columns=expected_columns)
             return stock_code, data.round(2)
     except Exception as e:
         # Log the error but do not retry here
@@ -99,6 +103,9 @@ def save_stock_data(stock_data, save_dir=RESULTS_PKL_DIR):
             new_key = k[:-3] if k.endswith(".NS") else k
             if hasattr(v, "to_dict"):
                 df_copy = v.copy()
+                # Ensure consistent column names
+                expected_columns = ['Open', 'High', 'Low', 'Close', 'Volume', 'Dividends', 'Stock Splits']
+                df_copy = df_copy.reindex(columns=expected_columns)
                 if not isinstance(df_copy.index.dtype, pd.DatetimeTZDtype):
                     df_copy.index = pd.to_datetime(df_copy.index).tz_localize(
                         "Asia/Kolkata", ambiguous="NaT", nonexistent="shift_forward"
@@ -138,4 +145,4 @@ if __name__ == "__main__":
     else:
         stock_data, failed = download_batch_stocks(tickers, period="1y", interval="1d")
         save_path = save_stock_data(stock_data)
-        loaded_data = load_stock_data(save_path) if save_path else None
+    

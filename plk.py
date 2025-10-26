@@ -36,7 +36,9 @@ def load_and_optimize(original_path, optimized_path):
                 try:
                     # Handle dicts shaped like DataFrame.to_dict('split')
                     if set(v.keys()) >= {"index", "columns", "data"}:
-                        df = pd.DataFrame(v["data"], index=v["index"], columns=v["columns"])
+                        # Ensure columns are simple strings
+                        columns = [col if isinstance(col, str) else col[0] for col in v["columns"]]
+                        df = pd.DataFrame(v["data"], index=v["index"], columns=columns)
                     else:
                         df = pd.DataFrame(**v)
                     df = df.sort_index(ascending=True)
@@ -56,6 +58,6 @@ def load_and_optimize(original_path, optimized_path):
         return {}
 
 if __name__ == "__main__":
-    original_pickle = "/workspaces/Yfinance_data/results_pkl/stock_data_010825.pkl"
+    original_pickle = "/workspaces/Yfinance_data/results_pkl/stock_data_261025.pkl"
     optimized_pickle = "stock_data_optimized.pkl"
     load_and_optimize(original_pickle, optimized_pickle)
