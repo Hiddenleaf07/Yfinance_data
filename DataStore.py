@@ -8,8 +8,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 STOCK_LIST_PATH = "Indices/EQUITY_L.csv"
 RESULTS_PKL_DIR = "results_pkl"
-BATCH_SIZE = 200          # smaller batches keep Yahoo responsive
-MAX_WORKERS = 12         # more threads = faster, until Yahoo rate-limits
+BATCH_SIZE = 158          # smaller batches keep Yahoo responsive
+MAX_WORKERS = 14         # more threads = faster, until Yahoo rate-limits
 MAX_RETRIES = 0          # retry failed tickers a couple of times
 
 def read_stock_list(stock_list_path=STOCK_LIST_PATH):
