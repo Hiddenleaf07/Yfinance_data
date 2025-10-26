@@ -101,16 +101,24 @@ def save_stock_data(stock_data, save_dir=RESULTS_PKL_DIR):
         converted_data = {}
         for k, v in stock_data.items():
             new_key = k[:-3] if k.endswith(".NS") else k
+            # Prefer storing DataFrame objects directly (optimized).
             if hasattr(v, "to_dict"):
                 df_copy = v.copy()
                 # Ensure consistent column names
                 expected_columns = ['Open', 'High', 'Low', 'Close', 'Volume', 'Dividends', 'Stock Splits']
                 df_copy = df_copy.reindex(columns=expected_columns)
-                if not isinstance(df_copy.index.dtype, pd.DatetimeTZDtype):
-                    df_copy.index = pd.to_datetime(df_copy.index).tz_localize(
-                        "Asia/Kolkata", ambiguous="NaT", nonexistent="shift_forward"
-                    )
-                converted_data[new_key] = df_copy.to_dict("split")
+                # Ensure timezone-aware datetime index
+                try:
+                    if not pd.api.types.is_datetime64_any_dtype(df_copy.index):
+                        df_copy.index = pd.to_datetime(df_copy.index)
+                    if df_copy.index.tz is None:
+                        df_copy.index = df_copy.index.tz_localize(
+                            "Asia/Kolkata", ambiguous="NaT", nonexistent="shift_forward"
+                        )
+                except Exception:
+                    # If localization fails, keep original index
+                    pass
+                converted_data[new_key] = df_copy
             else:
                 converted_data[new_key] = v
         with open(filepath, "wb") as f:
