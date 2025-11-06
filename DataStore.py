@@ -24,25 +24,24 @@ def read_stock_list(stock_list_path=STOCK_LIST_PATH):
         return []
 
 def download_single_stock(stock_code, period, interval):
-    """Download data for a single stock (no retries)."""
-    try:
-        ticker = yf.Ticker(stock_code)
-        data = ticker.history(
-            period=period,
-            interval=interval,
-            auto_adjust=True,
-            rounding=True,
-            timeout=5,
-            actions=True  # Include dividends and stock splits
-        )
-        if not data.empty:
-            # Ensure consistent column names and order
-            expected_columns = ['Open', 'High', 'Low', 'Close', 'Volume', 'Dividends', 'Stock Splits']
-            data = data.reindex(columns=expected_columns)
-            return stock_code, data.round(2)
-    except Exception as e:
-        # Log the error but do not retry here
-        print(f"Error downloading {stock_code}: {e}")
+    """Download data for a single stock with retries."""
+    attempt = 0
+    while attempt <= MAX_RETRIES:
+        try:
+            ticker = yf.Ticker(stock_code)
+            data = ticker.history(
+                period=period,
+                interval=interval,
+                auto_adjust=True,
+                rounding=True,
+                timeout=5,
+            )
+            if not data.empty:
+                return stock_code, data.round(2)
+        except Exception as e:
+            print(f"Error downloading {stock_code} (attempt {attempt+1}): {e}")
+        attempt += 1
+        time.sleep(0.5 * attempt)  # exponential backoff
     return stock_code, None
 
 def download_batch_stocks(tickers, period="1y", interval="1d"):
@@ -78,12 +77,27 @@ def download_batch_stocks(tickers, period="1y", interval="1d"):
         print(f"[Batch Download] Batch finished: Downloaded {batch_success}, Failed {batch_failed} "
               f"(Time: {batch_end_time - batch_start_time:.2f}s)")
 
-    # No retry mechanism: just report failed tickers
+    # Retry failed tickers once more
     if failed:
-        print(f"[Batch Download] No retry configured — {len(failed)} tickers failed to download.")
-        print("Failed tickers:")
-        for t in sorted(set(failed)):
-            print(f"  - {t}")
+        print(f"[Batch Download] Retrying {len(failed)} failed stocks...")
+        retry_failed = []
+        retry_start_time = time.time()
+        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+            future_to_ticker = {
+                executor.submit(download_single_stock, ticker, period, interval): ticker
+                for ticker in failed
+            }
+            for future in as_completed(future_to_ticker):
+                stock_code, data = future.result()
+                if data is not None:
+                    all_data[stock_code] = data
+                else:
+                    retry_failed.append(stock_code)
+        retry_end_time = time.time()
+        print(f"[Batch Download] Retry finished: "
+              f"Recovered {len(failed) - len(retry_failed)}, Still failed {len(retry_failed)} "
+              f"(Time: {retry_end_time - retry_start_time:.2f}s)")
+        failed = retry_failed
 
     overall_end = time.time()
     print(f"[Batch Download] Finished: {len(all_data)} downloaded, {len(failed)} failed. "
@@ -101,24 +115,13 @@ def save_stock_data(stock_data, save_dir=RESULTS_PKL_DIR):
         converted_data = {}
         for k, v in stock_data.items():
             new_key = k[:-3] if k.endswith(".NS") else k
-            # Prefer storing DataFrame objects directly (optimized).
             if hasattr(v, "to_dict"):
                 df_copy = v.copy()
-                # Ensure consistent column names
-                expected_columns = ['Open', 'High', 'Low', 'Close', 'Volume', 'Dividends', 'Stock Splits']
-                df_copy = df_copy.reindex(columns=expected_columns)
-                # Ensure timezone-aware datetime index
-                try:
-                    if not pd.api.types.is_datetime64_any_dtype(df_copy.index):
-                        df_copy.index = pd.to_datetime(df_copy.index)
-                    if df_copy.index.tz is None:
-                        df_copy.index = df_copy.index.tz_localize(
-                            "Asia/Kolkata", ambiguous="NaT", nonexistent="shift_forward"
-                        )
-                except Exception:
-                    # If localization fails, keep original index
-                    pass
-                converted_data[new_key] = df_copy
+                if not isinstance(df_copy.index.dtype, pd.DatetimeTZDtype):
+                    df_copy.index = pd.to_datetime(df_copy.index).tz_localize(
+                        "Asia/Kolkata", ambiguous="NaT", nonexistent="shift_forward"
+                    )
+                converted_data[new_key] = df_copy.to_dict("split")
             else:
                 converted_data[new_key] = v
         with open(filepath, "wb") as f:
@@ -153,4 +156,4 @@ if __name__ == "__main__":
     else:
         stock_data, failed = download_batch_stocks(tickers, period="1y", interval="1d")
         save_path = save_stock_data(stock_data)
-    
+        loaded_data = load_stock_data(save_path) if save_path else None
