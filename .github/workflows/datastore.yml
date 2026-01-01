@@ -1,0 +1,25 @@
+name: Run DataStore Script
+
+on:
+  schedule:
+    # Runs at 9:29 AM IST (3:59 AM UTC) daily
+    - cron: '59 3 * * *'
+  workflow_dispatch:
+
+jobs:
+  run-datastore:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+
+      - name: Install yfinance 0.2.61
+        run: pip install yfinance==0.2.61
+
+      - name: Run DataStore.py
+        run: python DataStore.py

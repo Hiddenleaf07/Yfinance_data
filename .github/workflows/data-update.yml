@@ -7,14 +7,10 @@ on:
         description: 'Skip waiting for 9:29 AM IST'
         required: false
         default: 'false'
-      force_run:
-        description: 'Run even on weekends'
-        required: false
-        default: 'false'
 
   schedule:
-    # Run at 3:54 AM UTC (9:24 AM IST) Monday-Friday with buffer time
-    - cron: '54 3 * * 1-5'
+    # Run at 3:59 AM UTC (9:29 AM IST) Monday-Friday
+    - cron: '59 3 * * 1-5'
 
 jobs:
   update-data:
@@ -24,25 +20,9 @@ jobs:
     timeout-minutes: 15
     
     steps:
-      # --- CHECK DAY OF WEEK ---
-      - name: Check if weekday
-        if: github.event_name == 'schedule' && inputs.force_run != 'true'
-        id: check_weekday
-        run: |
-          DAY_OF_WEEK=$(date -u +%u)  # 1=Monday, 7=Sunday
-          if [ $DAY_OF_WEEK -ge 1 ] && [ $DAY_OF_WEEK -le 5 ]; then
-            echo "Today is weekday ($DAY_OF_WEEK), proceeding..."
-            echo "is_weekday=true" >> $GITHUB_OUTPUT
-          else
-            echo "Today is weekend ($DAY_OF_WEEK), skipping..."
-            echo "is_weekday=false" >> $GITHUB_OUTPUT
-          fi
-
-      # --- TIMER DELAY UNTIL 9:29 AM IST ---
+      # --- MAIN EXECUTION ---
       - name: Delay until 9:29 AM IST
-        if: |
-          (github.event_name == 'schedule' && steps.check_weekday.outputs.is_weekday == 'true') ||
-          (github.event_name == 'workflow_dispatch' && inputs.skip_delay == 'false')
+        if: github.event_name == 'workflow_dispatch' && inputs.skip_delay == 'false'
         run: |
           echo "Current UTC time: $(date -u)"
           echo "Current IST time: $(TZ='Asia/Kolkata' date)"
