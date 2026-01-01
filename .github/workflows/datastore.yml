@@ -2,14 +2,20 @@ name: Run DataStore Script
 
 on:
   schedule:
-    # Runs at 9:29 AM IST (3:59 AM UTC) daily
-    - cron: '59 3 * * *'
+    # Schedule at 9:00 AM IST (3:30 AM UTC) on weekdays
+    # Average delay is 25-27 min, so script will wait until 9:29 AM if early
+    - cron: '30 3 * * 1-5'
   workflow_dispatch:
+    inputs:
+      force_run:
+        description: 'Force run regardless of time/weekday checks'
+        required: false
+        default: 'false'
 
 jobs:
   run-datastore:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 3
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -22,19 +28,28 @@ jobs:
       - name: Install yfinance 0.2.61
         run: pip install yfinance==0.2.61
 
-      - name: Run DataStore.py with rate-limit friendly settings
+      - name: Run DataStore.py
+        env:
+          RUN_FORCE: ${{ github.event.inputs.force_run == 'true' && 'true' || 'false' }}
         run: |
-          echo "Starting DataStore.py download..."
+          echo "=== Workflow Triggered ==="
+          echo "UTC time: $(date -u +'%Y-%m-%d %H:%M:%S')"
+          echo "IST time: $(TZ='Asia/Kolkata' date +'%Y-%m-%d %H:%M:%S')"
+          echo "Day: $(TZ='Asia/Kolkata' date +'%A')"
+          echo "Force Run: $RUN_FORCE"
+          echo "=== Starting Download ==="
           python DataStore.py
-        timeout-minutes: 2
         continue-on-error: true
 
       - name: Verify results
         run: |
+          echo "=== Download Results ==="
           if [ -d "results_pkl" ]; then
-            echo "Results directory exists"
-            ls -lh results_pkl/
+            echo "✓ Results saved successfully"
+            ls -lh results_pkl/ | tail -5
           else
-            echo "Warning: results_pkl directory not found"
+            echo "⚠ No results directory found"
           fi
+
+
 

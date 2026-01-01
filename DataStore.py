@@ -13,6 +13,53 @@ MAX_WORKERS = 14          # original worker count
 MAX_RETRIES = 0           # no retries
 BATCH_DELAY = 1.0         # 1 second delay between batches
 REQUEST_TIMEOUT = 10      # timeout per request
+TARGET_HOUR = 9           # 9:00 AM to account for delays
+TARGET_MINUTE = 0
+ACTUAL_RUN_HOUR = 9       # Actual run time (9:29 AM)
+ACTUAL_RUN_MINUTE = 29
+CUTOFF_HOUR = 10          # Stop running after 10:00 AM
+CUTOFF_MINUTE = 0
+
+def check_should_run():
+    """Smart scheduling with delay handling and weekend exclusion."""
+    now = datetime.now()
+    weekday = now.weekday()  # 0=Monday, 6=Sunday
+    
+    # Skip weekends (Saturday=5, Sunday=6)
+    if weekday >= 5:
+        print(f"[Scheduler] ✗ Skipping weekend ({['Mon','Tue','Wed','Thu','Fri','Sat','Sun'][weekday]})")
+        return False
+    
+    # Force run via environment variable (manual trigger)
+    force_run = os.getenv('RUN_FORCE', 'false').lower() == 'true'
+    if force_run:
+        print(f"[Scheduler] ✓ FORCE RUN enabled at {now.strftime('%H:%M:%S')} (all checks bypassed)")
+        return True
+    
+    current_hour = now.hour
+    current_minute = now.minute
+    current_time_minutes = current_hour * 60 + current_minute
+    
+    actual_run_minutes = ACTUAL_RUN_HOUR * 60 + ACTUAL_RUN_MINUTE
+    cutoff_minutes = CUTOFF_HOUR * 60 + CUTOFF_MINUTE
+    
+    # If before 9:29 AM, wait for that time
+    if current_time_minutes < actual_run_minutes:
+        wait_time = actual_run_minutes - current_time_minutes
+        print(f"[Scheduler] ⏳ Early start at {now.strftime('%H:%M:%S')} - waiting {wait_time}min until {ACTUAL_RUN_HOUR:02d}:{ACTUAL_RUN_MINUTE:02d}")
+        time.sleep(wait_time * 60)
+        return True
+    
+    # If between 9:29 AM and 10:00 AM, run immediately (handles delays up to 31 minutes)
+    elif actual_run_minutes <= current_time_minutes < cutoff_minutes:
+        delay_minutes = current_time_minutes - actual_run_minutes
+        print(f"[Scheduler] ✓ Running at {now.strftime('%H:%M:%S')} (Delay: {delay_minutes}min from target {ACTUAL_RUN_HOUR:02d}:{ACTUAL_RUN_MINUTE:02d})")
+        return True
+    
+    # If after 10:00 AM, skip this run
+    else:
+        print(f"[Scheduler] ✗ Current time {now.strftime('%H:%M:%S')} is beyond cutoff {CUTOFF_HOUR:02d}:{CUTOFF_MINUTE:02d} - skipping")
+        return False
 
 def read_stock_list(stock_list_path=STOCK_LIST_PATH):
     """Read stock tickers from CSV file."""
@@ -155,10 +202,22 @@ def load_stock_data(pickle_path):
         return {}
 
 if __name__ == "__main__":
+    # Check if should run (allows 5-minute window around target time)
+    if not check_should_run():
+        print("[Scheduler] Skipping run - not in target time window")
+        exit(0)
+    
     tickers = read_stock_list()
     if not tickers:
         print("No tickers to download.")
     else:
+        run_start = datetime.now()
+        print(f"[Start] Download started at {run_start.strftime('%Y-%m-%d %H:%M:%S IST')}")
+        
         stock_data, failed = download_batch_stocks(tickers, period="1y", interval="1d")
         save_path = save_stock_data(stock_data)
         loaded_data = load_stock_data(save_path) if save_path else None
+        
+        run_end = datetime.now()
+        duration = (run_end - run_start).total_seconds()
+        print(f"[End] Download completed at {run_end.strftime('%Y-%m-%d %H:%M:%S IST')} (Duration: {duration:.1f}s)")
