@@ -8,11 +8,11 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 STOCK_LIST_PATH = "Indices/EQUITY_L.csv"
 RESULTS_PKL_DIR = "results_pkl"
-BATCH_SIZE = 80           # smaller batches to avoid rate limiting
-MAX_WORKERS = 8           # reduced for GitHub Actions (less aggressive)
-MAX_RETRIES = 2           # retry failed tickers twice with backoff
-BATCH_DELAY = 0.5         # delay between batches (seconds)
-REQUEST_TIMEOUT = 8       # longer timeout for rate-limited scenarios
+BATCH_SIZE = 158          # original batch size
+MAX_WORKERS = 14          # original worker count
+MAX_RETRIES = 0           # no retries
+BATCH_DELAY = 1.0         # 1 second delay between batches
+REQUEST_TIMEOUT = 10      # timeout per request
 
 def read_stock_list(stock_list_path=STOCK_LIST_PATH):
     """Read stock tickers from CSV file."""
@@ -26,27 +26,20 @@ def read_stock_list(stock_list_path=STOCK_LIST_PATH):
         return []
 
 def download_single_stock(stock_code, period, interval):
-    """Download data for a single stock with exponential backoff retries."""
-    attempt = 0
-    while attempt <= MAX_RETRIES:
-        try:
-            ticker = yf.Ticker(stock_code)
-            data = ticker.history(
-                period=period,
-                interval=interval,
-                auto_adjust=True,
-                rounding=True,
-                timeout=REQUEST_TIMEOUT,
-            )
-            if not data.empty:
-                return stock_code, data.round(2)
-        except Exception as e:
-            print(f"Error downloading {stock_code} (attempt {attempt+1}): {e}")
-            if attempt < MAX_RETRIES:
-                # Exponential backoff: 1s, 3s, 7s
-                wait_time = (2 ** attempt) - 1
-                time.sleep(wait_time)
-        attempt += 1
+    """Download data for a single stock."""
+    try:
+        ticker = yf.Ticker(stock_code)
+        data = ticker.history(
+            period=period,
+            interval=interval,
+            auto_adjust=True,
+            rounding=True,
+            timeout=REQUEST_TIMEOUT,
+        )
+        if not data.empty:
+            return stock_code, data.round(2)
+    except Exception as e:
+        print(f"Error downloading {stock_code}: {e}")
     return stock_code, None
 
 def download_batch_stocks(tickers, period="1y", interval="1d"):
