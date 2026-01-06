@@ -2,9 +2,9 @@ name: Run DataStore Script
 
 on:
   schedule:
-    # Schedule at 9:00 AM IST (3:30 AM UTC) on weekdays
-    # Average delay is 25-27 min, so script will wait until 9:29 AM if early
-    - cron: '30 3 * * 1-5'
+    # Schedule at 8:14 AM IST (2:44 AM UTC) on weekdays
+    # Script will wait until 9:29 AM IST to run
+    - cron: '44 2 * * 1-5'
   workflow_dispatch:
     inputs:
       force_run:

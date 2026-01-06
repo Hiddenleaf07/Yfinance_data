@@ -13,12 +13,10 @@ MAX_WORKERS = 14          # original worker count
 MAX_RETRIES = 0           # no retries
 BATCH_DELAY = 1.0         # 1 second delay between batches
 REQUEST_TIMEOUT = 10      # timeout per request
-TARGET_HOUR = 9           # 9:00 AM to account for delays
-TARGET_MINUTE = 0
-ACTUAL_RUN_HOUR = 9       # Actual run time (9:29 AM)
+TARGET_HOUR = 9           # Target run time: 9:29 AM
+TARGET_MINUTE = 29
+ACTUAL_RUN_HOUR = 9       # Actual run time: 9:29 AM
 ACTUAL_RUN_MINUTE = 29
-CUTOFF_HOUR = 10          # Stop running after 10:00 AM
-CUTOFF_MINUTE = 0
 
 def check_should_run():
     """Smart scheduling with delay handling and weekend exclusion."""
@@ -41,7 +39,6 @@ def check_should_run():
     current_time_minutes = current_hour * 60 + current_minute
     
     actual_run_minutes = ACTUAL_RUN_HOUR * 60 + ACTUAL_RUN_MINUTE
-    cutoff_minutes = CUTOFF_HOUR * 60 + CUTOFF_MINUTE
     
     # If before 9:29 AM, wait for that time
     if current_time_minutes < actual_run_minutes:
@@ -50,16 +47,11 @@ def check_should_run():
         time.sleep(wait_time * 60)
         return True
     
-    # If between 9:29 AM and 10:00 AM, run immediately (handles delays up to 31 minutes)
-    elif actual_run_minutes <= current_time_minutes < cutoff_minutes:
+    # If at or after 9:29 AM, run immediately
+    else:
         delay_minutes = current_time_minutes - actual_run_minutes
         print(f"[Scheduler] ✓ Running at {now.strftime('%H:%M:%S')} (Delay: {delay_minutes}min from target {ACTUAL_RUN_HOUR:02d}:{ACTUAL_RUN_MINUTE:02d})")
         return True
-    
-    # If after 10:00 AM, skip this run
-    else:
-        print(f"[Scheduler] ✗ Current time {now.strftime('%H:%M:%S')} is beyond cutoff {CUTOFF_HOUR:02d}:{CUTOFF_MINUTE:02d} - skipping")
-        return False
 
 def read_stock_list(stock_list_path=STOCK_LIST_PATH):
     """Read stock tickers from CSV file."""
