@@ -13,45 +13,6 @@ MAX_WORKERS = 14          # original worker count
 MAX_RETRIES = 0           # no retries
 BATCH_DELAY = 1.0         # 1 second delay between batches
 REQUEST_TIMEOUT = 10      # timeout per request
-TARGET_HOUR = 9           # Target run time: 9:29 AM
-TARGET_MINUTE = 29
-ACTUAL_RUN_HOUR = 9       # Actual run time: 9:29 AM
-ACTUAL_RUN_MINUTE = 29
-
-def check_should_run():
-    """Smart scheduling with delay handling and weekend exclusion."""
-    now = datetime.now()
-    weekday = now.weekday()  # 0=Monday, 6=Sunday
-    
-    # Skip weekends (Saturday=5, Sunday=6)
-    if weekday >= 5:
-        print(f"[Scheduler] ✗ Skipping weekend ({['Mon','Tue','Wed','Thu','Fri','Sat','Sun'][weekday]})")
-        return False
-    
-    # Force run via environment variable (manual trigger)
-    force_run = os.getenv('RUN_FORCE', 'false').lower() == 'true'
-    if force_run:
-        print(f"[Scheduler] ✓ FORCE RUN enabled at {now.strftime('%H:%M:%S')} (all checks bypassed)")
-        return True
-    
-    current_hour = now.hour
-    current_minute = now.minute
-    current_time_minutes = current_hour * 60 + current_minute
-    
-    actual_run_minutes = ACTUAL_RUN_HOUR * 60 + ACTUAL_RUN_MINUTE
-    
-    # If before 9:29 AM, wait for that time
-    if current_time_minutes < actual_run_minutes:
-        wait_time = actual_run_minutes - current_time_minutes
-        print(f"[Scheduler] ⏳ Early start at {now.strftime('%H:%M:%S')} - waiting {wait_time}min until {ACTUAL_RUN_HOUR:02d}:{ACTUAL_RUN_MINUTE:02d}")
-        time.sleep(wait_time * 60)
-        return True
-    
-    # If at or after 9:29 AM, run immediately
-    else:
-        delay_minutes = current_time_minutes - actual_run_minutes
-        print(f"[Scheduler] ✓ Running at {now.strftime('%H:%M:%S')} (Delay: {delay_minutes}min from target {ACTUAL_RUN_HOUR:02d}:{ACTUAL_RUN_MINUTE:02d})")
-        return True
 
 def read_stock_list(stock_list_path=STOCK_LIST_PATH):
     """Read stock tickers from CSV file."""
@@ -194,11 +155,6 @@ def load_stock_data(pickle_path):
         return {}
 
 if __name__ == "__main__":
-    # Check if should run (allows 5-minute window around target time)
-    if not check_should_run():
-        print("[Scheduler] Skipping run - not in target time window")
-        exit(0)
-    
     tickers = read_stock_list()
     if not tickers:
         print("No tickers to download.")
