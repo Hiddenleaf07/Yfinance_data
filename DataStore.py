@@ -8,11 +8,11 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 STOCK_LIST_PATH = "Indices/EQUITY_L.csv"
 RESULTS_PKL_DIR = "results_pkl"
-BATCH_SIZE = 158          # original batch size
-MAX_WORKERS = 14          # original worker count
-MAX_RETRIES = 0           # no retries
+BATCH_SIZE = 80          # original batch size
+MAX_WORKERS = 8          # original worker count
+MAX_RETRIES = 1           # no retries
 BATCH_DELAY = 1.0         # 1 second delay between batches
-REQUEST_TIMEOUT = 10      # timeout per request
+REQUEST_TIMEOUT = 8      # timeout per request
 
 def read_stock_list(stock_list_path=STOCK_LIST_PATH):
     """Read stock tickers from CSV file."""
