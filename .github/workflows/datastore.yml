@@ -2,74 +2,57 @@ name: Run DataStore Script
 
 on:
   schedule:
-    # Schedule at 8:00 AM IST (2:30 AM UTC) on weekdays (Mon-Fri)
-    # Workflow will smart wait until 9:29 AM if triggered early
-    - cron: '30 2  * * 1-5'  # Runs at 2:30 AM UTC (8:00 AM IST) every weekday
+    # Trigger at 2:30 AM UTC (8:00 AM IST) Mon-Fri
+    - cron: '30 2 * * 1-5'
   workflow_dispatch:
     inputs:
       force_run:
-        description: 'Force run regardless of time/weekday checks'
+        description: 'Force run (skips wait and day check)'
         required: false
         default: 'false'
+        type: boolean
 
 jobs:
   run-datastore:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 150 # Enough time to wait from 8:00 to 9:29 + script execution
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
-      - name: Smart Scheduler - Wait until 9:29 AM IST if triggered early
+      - name: Smart Scheduler - Wait until 9:29 AM IST
         run: |
           #!/bin/bash
           
-          # Target time: 9:29 AM IST
+          # Skip waiting if manually triggered with force_run
+          if [[ "${{ github.event.inputs.force_run }}" == "true" ]]; then
+            echo ">> Manual Force Run detected. Skipping wait logic."
+            exit 0
+          fi
+
           TARGET_HOUR=9
           TARGET_MINUTE=29
+          TARGET_TOTAL=$((TARGET_HOUR * 60 + TARGET_MINUTE))
+          
+          echo "Target Execution Time: 09:29 IST"
           
           while true; do
+            H=$(TZ='Asia/Kolkata' date '+%H')
+            M=$(TZ='Asia/Kolkata' date '+%M')
+            
+            # 10# prevents the '08' octal error
+            CURRENT_TOTAL=$(( 10#$H * 60 + 10#$M ))
             CURRENT_TIME=$(TZ='Asia/Kolkata' date '+%H:%M:%S')
-            CURRENT_HOUR=$(TZ='Asia/Kolkata' date '+%H')
-            CURRENT_MINUTE=$(TZ='Asia/Kolkata' date '+%M')
             
-            # Convert to minutes since midnight
-            CURRENT_MINUTES=$((CURRENT_HOUR * 60 + CURRENT_MINUTE))
-            TARGET_MINUTES=$((TARGET_HOUR * 60 + TARGET_MINUTE))
-            
-            echo "Current IST time: $CURRENT_TIME"
-            
-            if [ $CURRENT_MINUTES -lt $TARGET_MINUTES ]; then
-              # Before 9:29 AM - calculate wait time
-              WAIT_MINUTES=$((TARGET_MINUTES - CURRENT_MINUTES))
-              echo "[Scheduler] ⏳ Early trigger at $CURRENT_TIME - waiting $WAIT_MINUTES minutes until ${TARGET_HOUR}:${TARGET_MINUTE} IST"
-              sleep 60  # Check every minute
+            if [ $CURRENT_TOTAL -lt $TARGET_TOTAL ]; then
+              DIFF=$((TARGET_TOTAL - CURRENT_TOTAL))
+              echo "[Waiting] Current IST: $CURRENT_TIME. Target: 09:29 ($DIFF mins remaining...)"
+              sleep 60
             else
-              # At or after 9:29 AM - ready to run
-              DELAY_MINUTES=$((CURRENT_MINUTES - TARGET_MINUTES))
-              echo "[Scheduler] ✓ Ready to run at $CURRENT_TIME (Delay: ${DELAY_MINUTES}min from target ${TARGET_HOUR}:${TARGET_MINUTE})"
+              echo "[Ready] Target time reached at $CURRENT_TIME IST."
               break
             fi
           done
-
-      - name: Verify it's a weekday
-        run: |
-          WEEKDAY=$(TZ='Asia/Kolkata' date '+%A')
-          echo "Current day: $WEEKDAY"
-          if [[ "$WEEKDAY" =~ ^(Monday|Tuesday|Wednesday|Thursday|Friday)$ ]]; then
-            echo "✓ Weekday confirmed - proceeding with download"
-          else
-            echo "✗ Weekend detected - skipping download"
-            exit 1
-          fi
-
-      - name: Log timing information
-        run: |
-          echo "=== Workflow Triggered ==="
-          echo "UTC time: $(date -u +'%Y-%m-%d %H:%M:%S')"
-          echo "IST time: $(TZ='Asia/Kolkata' date +'%Y-%m-%d %H:%M:%S')"
-          echo "Day: $(TZ='Asia/Kolkata' date +'%A')"
-          echo "=== Starting Download ==="
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -78,22 +61,30 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install yfinance==0.2.61
-          pip install pandas
+          pip install yfinance==0.2.61 pandas
 
       - name: Run DataStore.py
-        run: python DataStore.py
-        continue-on-error: true
-
-      - name: Verify results
+        id: run_script
         run: |
-          echo "=== Download Results ==="
-          if [ -d "results_pkl" ]; then
-            echo "✓ Results saved successfully"
-            ls -lh results_pkl/ | tail -5
+          # Run the script
+          python DataStore.py
+          
+          # Check if the results directory exists and has files
+          if [ -d "results_pkl" ] && [ "$(ls -A results_pkl)" ]; then
+            echo "data_saved=true" >> $GITHUB_ENV
+            echo "✓ Data stored successfully."
           else
-            echo "⚠ Results directory not found"
+            echo "data_saved=false" >> $GITHUB_ENV
+            echo "⚠ No data found in results_pkl."
           fi
 
-
-
+      - name: Finalize Job
+        run: |
+          if [ "$data_saved" = "true" ]; then
+            echo "=== SUCCESS ==="
+            echo "Data has been captured and stored. Job finishing now."
+            # The job will end naturally here
+          else
+            echo "=== NOTICE ==="
+            echo "Script finished but no data was saved. Please check DataStore.py logic."
+          fi
