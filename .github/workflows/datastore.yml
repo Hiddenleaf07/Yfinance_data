@@ -4,7 +4,7 @@ on:
   schedule:
     # Schedule at 8:00 AM IST (2:30 AM UTC) on weekdays (Mon-Fri)
     # Workflow will smart wait until 9:29 AM if triggered early
-    - cron: '00 3 * * 1-5'  # Runs at 3:00 AM UTC (8:30 AM IST) every weekday
+    - cron: '30 2  * * 1-5'  # Runs at 2:30 AM UTC (8:00 AM IST) every weekday
   workflow_dispatch:
     inputs:
       force_run:
