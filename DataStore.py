@@ -6,6 +6,21 @@ import yfinance as yf
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+# === USER-AGENT PATCH FOR YFINANCE (ADDED FOR GITHUB ACTIONS RELIABILITY) ===
+import requests
+
+_original_get = requests.Session.get
+
+def _patched_get(self, url, **kwargs):
+    headers = kwargs.get('headers', {})
+    if 'User-Agent' not in headers:
+        headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    kwargs['headers'] = headers
+    return _original_get(self, url, **kwargs)
+
+requests.Session.get = _patched_get
+# === END OF PATCH ===
+
 STOCK_LIST_PATH = "Indices/EQUITY_L.csv"
 RESULTS_PKL_DIR = "results_pkl"
 BATCH_SIZE = 110           # smaller batches to avoid rate limiting
