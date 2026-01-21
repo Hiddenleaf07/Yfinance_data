@@ -8,11 +8,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 STOCK_LIST_PATH = "Indices/EQUITY_L.csv"
 RESULTS_PKL_DIR = "results_pkl"
-BATCH_SIZE = 80           # smaller batches to avoid rate limiting
-MAX_WORKERS = 8           # reduced for GitHub Actions (less aggressive)
-MAX_RETRIES = 0           # retry failed tickers twice with backoff
-BATCH_DELAY = 0.5         # delay between batches (seconds)
-REQUEST_TIMEOUT = 8       # longer timeout for rate-limited scenarios
+BATCH_SIZE = 158          # smaller batches keep Yahoo responsive
+MAX_WORKERS = 14         # more threads = faster, until Yahoo rate-limits
+MAX_RETRIES = 0          # retry failed tickers a couple of times
 
 def read_stock_list(stock_list_path=STOCK_LIST_PATH):
     """Read stock tickers from CSV file."""
@@ -26,7 +24,7 @@ def read_stock_list(stock_list_path=STOCK_LIST_PATH):
         return []
 
 def download_single_stock(stock_code, period, interval):
-    """Download data for a single stock with exponential backoff retries."""
+    """Download data for a single stock with retries."""
     attempt = 0
     while attempt <= MAX_RETRIES:
         try:
@@ -36,31 +34,27 @@ def download_single_stock(stock_code, period, interval):
                 interval=interval,
                 auto_adjust=True,
                 rounding=True,
-                timeout=REQUEST_TIMEOUT,
+                timeout=5,
             )
             if not data.empty:
                 return stock_code, data.round(2)
         except Exception as e:
             print(f"Error downloading {stock_code} (attempt {attempt+1}): {e}")
-            if attempt < MAX_RETRIES:
-                # Exponential backoff: 1s, 3s, 7s
-                wait_time = (2 ** attempt) - 1
-                time.sleep(wait_time)
         attempt += 1
+        time.sleep(0.5 * attempt)  # exponential backoff
     return stock_code, None
 
 def download_batch_stocks(tickers, period="1y", interval="1d"):
-    """Download stock data in parallel batches with strategic delays to avoid rate limiting."""
+    """Download stock data in parallel batches with retries and timing per batch."""
     all_data = {}
     failed = []
     total = len(tickers)
     print(f"[Batch Download] Starting download for {total} stocks, batch size {BATCH_SIZE}, workers {MAX_WORKERS}")
     overall_start = time.time()
 
-    for batch_idx, batch_start in enumerate(range(0, total, BATCH_SIZE)):
+    for batch_start in range(0, total, BATCH_SIZE):
         batch = tickers[batch_start:batch_start+BATCH_SIZE]
-        batch_num = batch_idx + 1
-        print(f"[Batch Download] Processing batch {batch_num}: {len(batch)} stocks")
+        print(f"[Batch Download] Processing batch {batch_start//BATCH_SIZE+1}: {len(batch)} stocks")
         batch_start_time = time.time()
         batch_success = 0
         batch_failed = 0
@@ -82,17 +76,12 @@ def download_batch_stocks(tickers, period="1y", interval="1d"):
         batch_end_time = time.time()
         print(f"[Batch Download] Batch finished: Downloaded {batch_success}, Failed {batch_failed} "
               f"(Time: {batch_end_time - batch_start_time:.2f}s)")
-        
-        # Add strategic delay between batches to avoid rate limiting
-        if batch_idx < (total - 1) // BATCH_SIZE:
-            time.sleep(BATCH_DELAY)
 
-    # Retry failed tickers with longer delays
+    # Retry failed tickers once more
     if failed:
-        print(f"[Batch Download] Retrying {len(failed)} failed stocks with exponential backoff...")
-        retry_start_time = time.time()
+        print(f"[Batch Download] Retrying {len(failed)} failed stocks...")
         retry_failed = []
-        
+        retry_start_time = time.time()
         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
             future_to_ticker = {
                 executor.submit(download_single_stock, ticker, period, interval): ticker
@@ -104,7 +93,6 @@ def download_batch_stocks(tickers, period="1y", interval="1d"):
                     all_data[stock_code] = data
                 else:
                     retry_failed.append(stock_code)
-        
         retry_end_time = time.time()
         print(f"[Batch Download] Retry finished: "
               f"Recovered {len(failed) - len(retry_failed)}, Still failed {len(retry_failed)} "
