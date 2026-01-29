@@ -3,7 +3,6 @@ import pickle
 import time
 import pandas as pd
 import yfinance as yf
-import requests
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -13,15 +12,6 @@ BATCH_SIZE = 100          # balanced batch size
 MAX_WORKERS = 8 if (os.getenv("CI") or os.getenv("GITHUB_ACTIONS")) else 14  # 8 for CI, 14 for local
 MAX_RETRIES = 2           # quick retries only
 CI_ENVIRONMENT = os.getenv("CI") or os.getenv("GITHUB_ACTIONS")  # detect CI
-
-# User-Agent headers to avoid being blocked
-USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-
-def create_session():
-    """Create a requests session with proper User-Agent and retry strategy."""
-    session = requests.Session()
-    session.headers.update({"User-Agent": USER_AGENT})
-    return session
 
 def read_stock_list(stock_list_path=STOCK_LIST_PATH):
     """Read stock tickers from CSV file."""
@@ -39,9 +29,8 @@ def download_single_stock(stock_code, period, interval):
     attempt = 0
     while attempt <= MAX_RETRIES:
         try:
-            # Create session with User-Agent
-            session = create_session()
-            ticker = yf.Ticker(stock_code, session=session)
+            # Let yfinance handle curl_cffi session internally
+            ticker = yf.Ticker(stock_code)
             
             # Tiny delay on retry only
             if attempt > 0:
