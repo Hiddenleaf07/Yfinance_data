@@ -3,31 +3,25 @@ import pickle
 import time
 import pandas as pd
 import yfinance as yf
+import requests
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-# === USER-AGENT PATCH FOR YFINANCE (ADDED FOR GITHUB ACTIONS RELIABILITY) ===
-import requests
-
-_original_get = requests.Session.get
-
-def _patched_get(self, url, **kwargs):
-    headers = kwargs.get('headers', {})
-    if 'User-Agent' not in headers:
-        headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-    kwargs['headers'] = headers
-    return _original_get(self, url, **kwargs)
-
-requests.Session.get = _patched_get
-# === END OF PATCH ===
-
 STOCK_LIST_PATH = "Indices/EQUITY_L.csv"
 RESULTS_PKL_DIR = "results_pkl"
-BATCH_SIZE = 110           # smaller batches to avoid rate limiting
-MAX_WORKERS = 8           # reduced for GitHub Actions (less aggressive)
-MAX_RETRIES = 0           # retry failed tickers twice with backoff
-BATCH_DELAY = 2         # delay between batches (seconds)
-REQUEST_TIMEOUT = 2       # longer timeout for rate-limited scenarios
+BATCH_SIZE = 100          # balanced batch size
+MAX_WORKERS = 8 if (os.getenv("CI") or os.getenv("GITHUB_ACTIONS")) else 14  # 8 for CI, 14 for local
+MAX_RETRIES = 2           # quick retries only
+CI_ENVIRONMENT = os.getenv("CI") or os.getenv("GITHUB_ACTIONS")  # detect CI
+
+# User-Agent headers to avoid being blocked
+USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+
+def create_session():
+    """Create a requests session with proper User-Agent and retry strategy."""
+    session = requests.Session()
+    session.headers.update({"User-Agent": USER_AGENT})
+    return session
 
 def read_stock_list(stock_list_path=STOCK_LIST_PATH):
     """Read stock tickers from CSV file."""
@@ -41,41 +35,48 @@ def read_stock_list(stock_list_path=STOCK_LIST_PATH):
         return []
 
 def download_single_stock(stock_code, period, interval):
-    """Download data for a single stock with exponential backoff retries."""
+    """Download data for a single stock with minimal delays."""
     attempt = 0
     while attempt <= MAX_RETRIES:
         try:
-            ticker = yf.Ticker(stock_code)
+            # Create session with User-Agent
+            session = create_session()
+            ticker = yf.Ticker(stock_code, session=session)
+            
+            # Tiny delay on retry only
+            if attempt > 0:
+                time.sleep(0.2 * attempt)
+            
             data = ticker.history(
                 period=period,
                 interval=interval,
                 auto_adjust=True,
                 rounding=True,
-                timeout=REQUEST_TIMEOUT,
+                timeout=10
             )
             if not data.empty:
                 return stock_code, data.round(2)
         except Exception as e:
-            print(f"Error downloading {stock_code} (attempt {attempt+1}): {e}")
-            if attempt < MAX_RETRIES:
-                # Exponential backoff: 1s, 3s, 7s
-                wait_time = (2 ** attempt) - 1
-                time.sleep(wait_time)
-        attempt += 1
+            if "429" in str(e) or "rate" in str(e).lower():
+                attempt += 1
+                if attempt <= MAX_RETRIES:
+                    time.sleep(1 * attempt)  # only 1-2 sec delay on 429
+            else:
+                print(f"Error downloading {stock_code} (attempt {attempt+1}): {e}")
+                attempt += 1
     return stock_code, None
 
 def download_batch_stocks(tickers, period="1y", interval="1d"):
-    """Download stock data in parallel batches with strategic delays to avoid rate limiting."""
+    """Download stock data in parallel batches - optimized for speed."""
     all_data = {}
     failed = []
     total = len(tickers)
-    print(f"[Batch Download] Starting download for {total} stocks, batch size {BATCH_SIZE}, workers {MAX_WORKERS}")
+    print(f"[Batch Download] Starting {total} stocks, batch {BATCH_SIZE}, workers {MAX_WORKERS} (CI: {bool(CI_ENVIRONMENT)})")
     overall_start = time.time()
 
-    for batch_idx, batch_start in enumerate(range(0, total, BATCH_SIZE)):
+    for batch_start in range(0, total, BATCH_SIZE):
         batch = tickers[batch_start:batch_start+BATCH_SIZE]
-        batch_num = batch_idx + 1
-        print(f"[Batch Download] Processing batch {batch_num}: {len(batch)} stocks")
+        batch_num = batch_start//BATCH_SIZE+1
         batch_start_time = time.time()
         batch_success = 0
         batch_failed = 0
@@ -94,21 +95,15 @@ def download_batch_stocks(tickers, period="1y", interval="1d"):
                     failed.append(stock_code)
                     batch_failed += 1
 
-        batch_end_time = time.time()
-        print(f"[Batch Download] Batch finished: Downloaded {batch_success}, Failed {batch_failed} "
-              f"(Time: {batch_end_time - batch_start_time:.2f}s)")
-        
-        # Add strategic delay between batches to avoid rate limiting
-        if batch_idx < (total - 1) // BATCH_SIZE:
-            time.sleep(BATCH_DELAY)
+        batch_time = time.time() - batch_start_time
+        print(f"[Batch {batch_num}] {batch_success}✓ {batch_failed}✗ ({batch_time:.1f}s)")
 
-    # Retry failed tickers with longer delays
+    # Retry failed tickers with single worker
     if failed:
-        print(f"[Batch Download] Retrying {len(failed)} failed stocks with exponential backoff...")
-        retry_start_time = time.time()
+        print(f"[Retry] Attempting {len(failed)} failed tickers...")
+        retry_start = time.time()
         retry_failed = []
-        
-        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        with ThreadPoolExecutor(max_workers=1) as executor:
             future_to_ticker = {
                 executor.submit(download_single_stock, ticker, period, interval): ticker
                 for ticker in failed
@@ -120,10 +115,9 @@ def download_batch_stocks(tickers, period="1y", interval="1d"):
                 else:
                     retry_failed.append(stock_code)
         
-        retry_end_time = time.time()
-        print(f"[Batch Download] Retry finished: "
-              f"Recovered {len(failed) - len(retry_failed)}, Still failed {len(retry_failed)} "
-              f"(Time: {retry_end_time - retry_start_time:.2f}s)")
+        recovered = len(failed) - len(retry_failed)
+        retry_time = time.time() - retry_start
+        print(f"[Retry] Recovered {recovered}, Still failed {len(retry_failed)} ({retry_time:.1f}s)")
         failed = retry_failed
 
     overall_end = time.time()
