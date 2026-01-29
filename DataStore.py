@@ -12,7 +12,7 @@ from urllib3.util import Retry
 # --- CONFIGURATION ---
 STOCK_LIST_PATH = "Indices/EQUITY_L.csv"
 RESULTS_PKL_DIR = "results_pkl"
-BATCH_SIZE = 100         # Yahoo likes ~100 tickers per bulk request
+BATCH_SIZE = 101         # Yahoo likes ~100 tickers per bulk request
 SLEEP_BETWEEN_BATCHES = (3, 7) # Random range in seconds to avoid fingerprinting
 
 def get_smart_session():
