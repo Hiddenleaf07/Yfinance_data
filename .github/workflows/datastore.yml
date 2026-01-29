@@ -15,8 +15,9 @@ on:
 jobs:
   run-datastore:
     runs-on: ubuntu-latest
-    # Increased timeout because we are waiting from 7:45 to 9:29
-    timeout-minutes: 200 
+    permissions:
+      contents: write
+    timeout-minutes: 180
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -28,28 +29,20 @@ jobs:
             echo ">> Manual Force Run detected. Skipping wait logic."
             exit 0
           fi
-
           TARGET_HOUR=9
           TARGET_MINUTE=29
           TARGET_TOTAL=$((TARGET_HOUR * 60 + TARGET_MINUTE))
-          
-          echo "Current Target: 09:29 IST"
-          
           while true; do
             H=$(TZ='Asia/Kolkata' date '+%H')
             M=$(TZ='Asia/Kolkata' date '+%M')
-            
-            # 10# ensures 08 and 09 are treated as decimals
             CURRENT_TOTAL=$(( 10#$H * 60 + 10#$M ))
             CURRENT_TIME=$(TZ='Asia/Kolkata' date '+%H:%M:%S')
-            
             if [ $CURRENT_TOTAL -lt $TARGET_TOTAL ]; then
               DIFF=$((TARGET_TOTAL - CURRENT_TOTAL))
-              # Print update every minute to keep the action alive
               echo "[Waiting] IST: $CURRENT_TIME. Target: 09:29 ($DIFF mins left...)"
               sleep 60
             else
-              echo "[Ready] Target time reached at $CURRENT_TIME IST."
+              echo "[Ready] Target reached at $CURRENT_TIME IST."
               break
             fi
           done
@@ -61,26 +54,23 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install yfinance==0.2.61 pandas curl_cffi
+          pip install yfinance==0.2.52 pandas curl_cffi
 
       - name: Run DataStore.py
         id: run_script
         run: |
           python DataStore.py
-          
           if [ -d "results_pkl" ] && [ "$(ls -A results_pkl)" ]; then
             echo "data_saved=true" >> $GITHUB_ENV
-            echo "✓ Data stored successfully."
           else
             echo "data_saved=false" >> $GITHUB_ENV
-            echo "⚠ No data found in results_pkl."
           fi
 
-      - name: Finalize Job
+      - name: Commit and Push data
+        if: env.data_saved == 'true'
         run: |
-          if [ "$data_saved" = "true" ]; then
-            echo "=== SUCCESS ==="
-          else
-            echo "=== NOTICE ==="
-            exit 1
-          fi
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add results_pkl/*.pkl
+          git commit -m "Automated Data Update: $(TZ='Asia/Kolkata' date)"
+          git push
