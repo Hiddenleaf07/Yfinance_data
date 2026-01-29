@@ -15,7 +15,7 @@ on:
 jobs:
   run-datastore:
     runs-on: ubuntu-latest
-    timeout-minutes: 150 # Enough time to wait from 8:00 to 9:29 + script execution
+    timeout-minutes: 150
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -23,27 +23,19 @@ jobs:
       - name: Smart Scheduler - Wait until 9:29 AM IST
         run: |
           #!/bin/bash
-          
-          # Skip waiting if manually triggered with force_run
           if [[ "${{ github.event.inputs.force_run }}" == "true" ]]; then
             echo ">> Manual Force Run detected. Skipping wait logic."
             exit 0
           fi
-
           TARGET_HOUR=9
           TARGET_MINUTE=29
           TARGET_TOTAL=$((TARGET_HOUR * 60 + TARGET_MINUTE))
-          
           echo "Target Execution Time: 09:29 IST"
-          
           while true; do
             H=$(TZ='Asia/Kolkata' date '+%H')
             M=$(TZ='Asia/Kolkata' date '+%M')
-            
-            # 10# prevents the '08' octal error
             CURRENT_TOTAL=$(( 10#$H * 60 + 10#$M ))
             CURRENT_TIME=$(TZ='Asia/Kolkata' date '+%H:%M:%S')
-            
             if [ $CURRENT_TOTAL -lt $TARGET_TOTAL ]; then
               DIFF=$((TARGET_TOTAL - CURRENT_TOTAL))
               echo "[Waiting] Current IST: $CURRENT_TIME. Target: 09:29 ($DIFF mins remaining...)"
@@ -61,15 +53,14 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install yfinance==0.2.61 pandas
+          # CRITICAL: Added curl_cffi to bypass Yahoo's bot detection
+          pip install yfinance==0.2.52 pandas curl_cffi
 
       - name: Run DataStore.py
         id: run_script
         run: |
-          # Run the script
           python DataStore.py
           
-          # Check if the results directory exists and has files
           if [ -d "results_pkl" ] && [ "$(ls -A results_pkl)" ]; then
             echo "data_saved=true" >> $GITHUB_ENV
             echo "✓ Data stored successfully."
@@ -82,9 +73,7 @@ jobs:
         run: |
           if [ "$data_saved" = "true" ]; then
             echo "=== SUCCESS ==="
-            echo "Data has been captured and stored. Job finishing now."
-            # The job will end naturally here
           else
             echo "=== NOTICE ==="
-            echo "Script finished but no data was saved. Please check DataStore.py logic."
+            exit 1 # Failing the job if no data is saved helps with debugging
           fi
