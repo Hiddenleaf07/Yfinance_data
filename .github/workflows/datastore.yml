@@ -72,5 +72,11 @@ jobs:
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
           git add results_pkl/*.pkl
-          git commit -m "Automated Data Update: $(TZ='Asia/Kolkata' date)"
-          git push
+          
+          # Fix for 'nothing to commit' error
+          if git diff --cached --quiet; then
+            echo "No changes detected. Skipping push."
+          else
+            git commit -m "Data Update: $(TZ='Asia/Kolkata' date)"
+            git push
+          fi
