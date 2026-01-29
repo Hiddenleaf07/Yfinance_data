@@ -2,8 +2,8 @@ name: Run DataStore Script
 
 on:
   schedule:
-    # Trigger at 2:30 AM UTC (8:00 AM IST) Mon-Fri
-    - cron: '30 2 * * 1-5'
+    # Trigger at 2:15 AM UTC (7:45 AM IST) Mon-Fri
+    - cron: '15 2 * * 1-5'
   workflow_dispatch:
     inputs:
       force_run:
@@ -15,7 +15,8 @@ on:
 jobs:
   run-datastore:
     runs-on: ubuntu-latest
-    timeout-minutes: 150
+    # Increased timeout because we are waiting from 7:45 to 9:29
+    timeout-minutes: 200 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -27,18 +28,25 @@ jobs:
             echo ">> Manual Force Run detected. Skipping wait logic."
             exit 0
           fi
+
           TARGET_HOUR=9
           TARGET_MINUTE=29
           TARGET_TOTAL=$((TARGET_HOUR * 60 + TARGET_MINUTE))
-          echo "Target Execution Time: 09:29 IST"
+          
+          echo "Current Target: 09:29 IST"
+          
           while true; do
             H=$(TZ='Asia/Kolkata' date '+%H')
             M=$(TZ='Asia/Kolkata' date '+%M')
+            
+            # 10# ensures 08 and 09 are treated as decimals
             CURRENT_TOTAL=$(( 10#$H * 60 + 10#$M ))
             CURRENT_TIME=$(TZ='Asia/Kolkata' date '+%H:%M:%S')
+            
             if [ $CURRENT_TOTAL -lt $TARGET_TOTAL ]; then
               DIFF=$((TARGET_TOTAL - CURRENT_TOTAL))
-              echo "[Waiting] Current IST: $CURRENT_TIME. Target: 09:29 ($DIFF mins remaining...)"
+              # Print update every minute to keep the action alive
+              echo "[Waiting] IST: $CURRENT_TIME. Target: 09:29 ($DIFF mins left...)"
               sleep 60
             else
               echo "[Ready] Target time reached at $CURRENT_TIME IST."
@@ -53,8 +61,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          # CRITICAL: Added curl_cffi to bypass Yahoo's bot detection
-          pip install yfinance==0.2.52 pandas curl_cffi
+          pip install yfinance==0.2.61 pandas curl_cffi
 
       - name: Run DataStore.py
         id: run_script
@@ -75,5 +82,5 @@ jobs:
             echo "=== SUCCESS ==="
           else
             echo "=== NOTICE ==="
-            exit 1 # Failing the job if no data is saved helps with debugging
+            exit 1
           fi
