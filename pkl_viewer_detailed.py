@@ -97,5 +97,5 @@ def view_pkl_file_detailed(file_path):
 
 if __name__ == "__main__":
     # Use the specific pickle file path
-    pkl_path = "/workspaces/Yfinance_data/results_pkl/stock_data_261025.pkl"
+    pkl_path = "/workspaces/Yfinance_data/results_pkl/stock_data_280326.pkl"
     view_pkl_file_detailed(pkl_path)
